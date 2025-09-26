@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Coffee Shop — Live Orders Dashboard</title>
+
+  <!-- Tailwind CDN (play) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    /* tiny custom scrollbar for panels */
+    .scrollbar-thin::-webkit-scrollbar { height: 8px; width: 8px; }
+    .scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.2); border-radius: 8px; }
+    .status-waiting { background: linear-gradient(90deg,#fef3c7,#fef2f2); }
+    .status-inprogress { background: linear-gradient(90deg,#e0f2fe,#eff6ff); }
+    .status-ready { background: linear-gradient(90deg,#dcfce7,#ecfccb); }
+    .status-cancelled { background: linear-gradient(90deg,#fef2f2,#fff1f2); text-decoration: line-through; }
+    .card-shadow { box-shadow: 0 6px 18px rgba(15,23,42,0.06); }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-800 antialiased">
+  <div class="max-w-7xl mx-auto p-4 md:p-6">
+
+    <header class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+      <div class="flex items-center gap-3">
+        <div class="rounded-full bg-amber-500 text-white w-12 h-12 flex items-center justify-center font-bold text-lg">☕</div>
+        <div>
+          <h1 class="text-2xl font-semibold">Coffee Shop — Live Orders</h1>
+          <p class="text-sm text-gray-600">Manage orders, monitor alerts, and get quick suggestions.</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <label class="text-sm text-gray-600">Auto-refresh:</label>
+        <select id="autoRefreshSelect" class="rounded border px-2 py-1 bg-white">
+          <option value="off">Off</option>
+          <option value="5">5s</option>
+          <option value="10">10s</option>
+          <option value="30">30s</option>
+          <option value="60">60s</option>
+        </select>
+
+        <button id="addDemoBtn" class="ml-2 inline-flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded shadow">Add demo order</button>
+        <button id="addBatchBtn" class="ml-1 inline-flex items-center gap-2 bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1.5 rounded">Add 5 demo</button>
+      </div>
+    </header>
+
+    <!-- Summary bar -->
+    <section class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+      <div class="p-4 bg-white rounded-lg card-shadow flex items-center justify-between">
+        <div>
+          <div class="text-sm text-gray-500">Total orders (today)</div>
+          <div id="totalOrders" class="text-2xl font-semibold">0</div>
+        </div>
+        <div class="text-right">
+          <div class="text-sm text-gray-500">Revenue</div>
+          <div id="totalRevenue" class="text-2xl font-semibold">₹0.00</div>
+        </div>
+      </div>
+
+      <div class="p-4 bg-white rounded-lg card-shadow">
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="text-sm text-gray-500">Ready</div>
+            <div id="readyCount" class="text-xl font-semibold">0</div>
+          </div>
+          <div>
+            <div class="text-sm text-gray-500">Pending</div>
+            <div id="pendingCount" class="text-xl font-semibold">0</div>
+          </div>
+        </div>
+        <div class="mt-3 text-xs text-gray-500">Pending includes 'waiting' & 'in progress'.</div>
+      </div>
+
+      <div class="p-4 bg-white rounded-lg card-shadow">
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="text-sm text-gray-500">Alerts</div>
+            <div id="alertCount" class="text-xl font-semibold text-red-600">0</div>
+          </div>
+          <div class="text-right">
+            <div class="text-sm text-gray-500">Cancelled</div>
+            <div id="cancelledCount" class="text-xl font-semibold">0</div>
+          </div>
+        </div>
+        <div class="mt-3 text-xs text-gray-500">Alerts show long waits & large orders.</div>
+      </div>
+    </section>
+
+    <main class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <!-- Orders grid -->
+      <section class="col-span-2">
+        <div class="mb-2 flex items-center justify-between">
+          <h2 class="text-lg font-medium">Orders</h2>
+          <div class="text-sm text-gray-500">Cards update with status & time</div>
+        </div>
+
+        <div id="ordersGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <!-- Order cards inserted here -->
+        </div>
+      </section>
+
+      <!-- Right column: Alerts + Smart Assistant -->
+      <aside class="space-y-4">
+        <div class="p-3 bg-white rounded-lg card-shadow">
+          <div class="flex items-center justify-between">
+            <h3 class="font-medium">Alerts</h3>
+            <button id="clearAlertsBtn" class="text-xs text-gray-500 hover:underline">Clear</button>
+          </div>
+
+          <div id="alertsPanel" class="mt-3 max-h-60 overflow-auto scrollbar-thin space-y-2 text-sm text-gray-700">
+            <div class="text-gray-400">No alerts yet.</div>
+          </div>
+        </div>
+
+        <div class="p-3 bg-white rounded-lg card-shadow">
+          <div class="flex items-center justify-between">
+            <h3 class="font-medium">Smart Assistant</h3>
+            <button id="runAssistantBtn" class="text-xs text-gray-500 hover:underline">Run</button>
+          </div>
+
+          <div id="assistantPanel" class="mt-3 space-y-2 text-sm text-gray-700">
+            <div class="text-gray-400">No suggestions yet. Click Run or add demo orders.</div>
+          </div>
+        </div>
+
+        <div class="p-3 bg-white rounded-lg card-shadow">
+          <h3 class="font-medium">Controls & quick actions</h3>
+          <div class="mt-2 flex flex-col gap-2">
+            <div class="flex items-center gap-2">
+              <button id="markAllReady" class="flex-1 bg-green-500 hover:bg-green-600 text-white py-1 rounded">Mark all Ready</button>
+              <button id="cancelAll" class="flex-1 bg-red-500 hover:bg-red-600 text-white py-1 rounded">Cancel all</button>
+            </div>
+            <div class="flex items-center gap-2">
+              <input id="demoCount" type="number" min="1" value="3" class="w-20 px-2 py-1 rounded border" />
+              <button id="addNBtn" class="flex-1 bg-amber-500 hover:bg-amber-600 text-white py-1 rounded">Add demo × N</button>
+            </div>
+          </div>
+        </div>
+
+      </aside>
+    </main>
+
+    <!-- Footer: hints -->
+    <footer class="mt-4 text-xs text-gray-500">
+      Tip: Use auto-refresh to simulate live progress. The Smart Assistant looks at item counts & queue. This is a demo simulation — adapt thresholds as needed.
+    </footer>
+
+  </div>
+
+  <script>
+    /***********************************************
+     * Coffee Shop Live Orders Dashboard
+     * Single-file vanilla JS + Tailwind
+     ***********************************************/
+
+    // ---------- Data model ----------
+    const ORDERS = []; // { id, customer, items: [{name, qty, price}], status, payment, ts (Date), cancelledReason? }
+
+    let autoRefreshTimer = null;
+
+    // Configurable thresholds
+    const LONG_WAIT_MS = 10 * 60 * 1000; // 10 minutes in ms
+    const LARGE_ORDER_ITEM_COUNT = 5;     // 5+ items considered large group order
+
+    // Sample menu items for demo orders
+    const MENU = {
+      drinks: [
+        { name: "Latte", price: 180 },
+        { name: "Cappuccino", price: 170 },
+        { name: "Flat White", price: 190 },
+        { name: "Espresso", price: 120 },
+        { name: "Cold Brew", price: 200 },
+        { name: "Americano", price: 140 },
+      ],
+      pastries: [
+        { name: "Croissant", price: 90 },
+        { name: "Blueberry Muffin", price: 80 },
+        { name: "Banana Bread", price: 85 },
+        { name: "Almond Tart", price: 120 },
+      ],
+      snacks: [
+        { name: "Bagel", price: 70 },
+        { name: "Sandwich", price: 140 },
+        { name: "Scone", price: 75 },
+      ]
+    };
+
+    const PAYMENT_METHODS = ["Cash", "Card", "UPI", "Wallet"];
+
+    // Helpers
+    const el = (id) => document.getElementById(id);
+    const rnd = (arr) => arr[Math.floor(Math.random()*arr.length)];
+    const formatMoney = (n) => {
+      // Indian rupee format symbol; adapt as you like
+      return "₹" + Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    };
+    const now = () => new Date();
+
+    // ---------- Order creation ----------
+    function generateDemoOrder() {
+      const id = 'ORD' + Math.random().toString(36).slice(2,8).toUpperCase();
+      const customerNames = ["Asha", "Vikram", "Sara", "John", "Priya", "Ravi", "Emily", "Rohan", "Nina", "Omar", "Lina"];
+      const customer = rnd(customerNames) + (Math.random()<0.3 ? " (Pickup)" : "");
+
+      // create items (random 1-6 items)
+      const itemCount = Math.floor(Math.random() * 6) + 1;
+      const items = [];
+      for (let i=0;i<itemCount;i++){
+        const category = rnd(["drinks","pastries","snacks"]);
+        const m = rnd(MENU[category]);
+
+        // random qty 1-3
+        const qty = Math.random() < 0.2 ? Math.floor(Math.random()*3)+2 : 1;
+        // push item (merge if same)
+        const existing = items.find(it => it.name === m.name);
+        if (existing) existing.qty += qty;
+        else items.push({ name: m.name, qty, price: m.price });
+      }
+
+      const status = "waiting"; // initial
+      const payment = rnd(PAYMENT_METHODS);
+      const ts = new Date(Date.now() - Math.floor(Math.random()*8*60*1000)); // up to 8 minutes ago for variety
+      const total = items.reduce((s,it) => s + it.price * it.qty, 0);
+
+      return { id, customer, items, status, payment, ts, total };
+    }
+
+    function addOrder(order) {
+      ORDERS.unshift(order); // newest on top
+      render();
+    }
+
+    // ---------- Render functions ----------
+    function render() {
+      renderSummary();
+      renderOrdersGrid();
+      updateAlerts();
+      updateAssistant();
+    }
+
+    function renderSummary() {
+      const totalOrders = ORDERS.length;
+      const totalRevenue = ORDERS.filter(o=>o.status!=="cancelled").reduce((s,o)=> s + (o.total || 0), 0);
+      const readyCount = ORDERS.filter(o=>o.status==="ready").length;
+      const pendingCount = ORDERS.filter(o=>o.status==="waiting" || o.status==="inprogress").length;
+      const cancelledCount = ORDERS.filter(o=>o.status==="cancelled").length;
+      const alertCount = computeAlerts().length;
+
+      el('totalOrders').textContent = totalOrders;
+      el('totalRevenue').textContent = formatMoney(totalRevenue);
+      el('readyCount').textContent = readyCount;
+      el('pendingCount').textContent = pendingCount;
+      el('cancelledCount').textContent = cancelledCount;
+      el('alertCount').textContent = alertCount;
+    }
+
+    function timeAgo(ts) {
+      const diff = Date.now() - new Date(ts).getTime();
+      const sec = Math.floor(diff/1000);
+      if (sec < 60) return sec + "s";
+      const min = Math.floor(sec/60);
+      if (min < 60) return min + "m";
+      const hr = Math.floor(min/60);
+      return hr + "h";
+    }
+
+    function statusClass(status) {
+      if (status === 'waiting') return 'status-waiting';
+      if (status === 'inprogress') return 'status-inprogress';
+      if (status === 'ready') return 'status-ready';
+      if (status === 'cancelled') return 'status-cancelled';
+      return '';
+    }
+
+    function renderOrdersGrid() {
+      const grid = el('ordersGrid');
+      grid.innerHTML = '';
+      if (ORDERS.length === 0) {
+        grid.innerHTML = '<div class="col-span-full p-6 bg-white rounded card-shadow text-center text-gray-500">No orders. Add demo orders to start.</div>';
+        return;
+      }
+
+      ORDERS.forEach(order => {
+        const container = document.createElement('div');
+        container.className = `p-3 rounded-lg bg-white card-shadow ${statusClass(order.status)}`;
+        container.setAttribute('data-id', order.id);
+
+        // header row
+        const header = document.createElement('div');
+        header.className = "flex items-start justify-between gap-2";
+        header.innerHTML = `
+          <div>
+            <div class="text-sm font-semibold">${escapeHtml(order.customer)}</div>
+            <div class="text-xs text-gray-600">#${order.id} • ${escapeHtml(order.payment)}</div>
+          </div>
+          <div class="text-right text-xs text-gray-600">
+            <div title="${new Date(order.ts).toLocaleString()}">${timeAgo(order.ts)} ago</div>
+            <div class="mt-1 ${order.status === 'ready' ? 'text-green-700 font-semibold' : order.status === 'cancelled' ? 'text-red-600 font-semibold' : 'text-amber-700 font-semibold'}">
+              ${capitalize(order.status)}
+            </div>
+          </div>
+        `;
+
+        // items
+        const itemsDiv = document.createElement('div');
+        itemsDiv.className = 'mt-3 text-sm';
+        const itemsList = order.items.map(it => `<div class="flex justify-between"><div>${escapeHtml(it.qty)} × ${escapeHtml(it.name)}</div><div>${formatMoney(it.price * it.qty)}</div></div>`).join('');
+        itemsDiv.innerHTML = itemsList + `<div class="mt-2 flex justify-between border-t pt-2 text-sm font-semibold"><div>Total</div><div>${formatMoney(order.total)}</div></div>`;
+
+        // controls
+        const controls = document.createElement('div');
+        controls.className = 'mt-3 flex gap-2';
+        // next status button
+        const nextBtn = document.createElement('button');
+        nextBtn.className = 'flex-1 px-2 py-1 text-sm rounded border';
+        nextBtn.textContent = buttonLabelFor(order.status);
+        nextBtn.disabled = (order.status === 'ready' || order.status === 'cancelled');
+        nextBtn.onclick = () => {
+          advanceStatus(order.id);
+        };
+
+        // cancel
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'px-2 py-1 text-sm rounded border bg-red-50 text-red-600';
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.onclick = () => {
+          if (order.status === 'cancelled') return;
+          const reason = prompt('Reason for cancellation (optional):', '');
+          cancelOrder(order.id, reason || 'Cancelled by manager');
+        };
+
+        controls.appendChild(nextBtn);
+        controls.appendChild(cancelBtn);
+
+        container.appendChild(header);
+        container.appendChild(itemsDiv);
+        container.appendChild(controls);
+
+        grid.appendChild(container);
+      });
+    }
+
+    // ---------- Actions ----------
+    function buttonLabelFor(status) {
+      if (status === 'waiting') return 'Start';
+      if (status === 'inprogress') return 'Mark Ready';
+      return '—';
+    }
+
+    function advanceStatus(id) {
+      const o = ORDERS.find(x => x.id === id);
+      if (!o || o.status === 'cancelled' || o.status === 'ready') return;
+      if (o.status === 'waiting') {
+        o.status = 'inprogress';
+        // push timestamp slightly earlier to simulate progress moment
+        o.ts = new Date(o.ts.getTime());
+      } else if (o.status === 'inprogress') {
+        o.status = 'ready';
+        // mark ready time to now
+        o.ts = new Date(o.ts.getTime());
+      }
+      render();
+    }
+
+    function cancelOrder(id, reason) {
+      const o = ORDERS.find(x => x.id === id);
+      if (!o) return;
+      o.status = 'cancelled';
+      o.cancelledReason = reason;
+      render();
+    }
+
+    function markAllReady() {
+      ORDERS.forEach(o => {
+        if (o.status !== 'cancelled') o.status = 'ready';
+      });
+      render();
+    }
+
+    function cancelAllOrders() {
+      if (!confirm('Cancel all orders?')) return;
+      ORDERS.forEach(o => {
+        if (o.status !== 'cancelled') {
+          o.status = 'cancelled';
+          o.cancelledReason = 'Cancelled by manager';
+        }
+      });
+      render();
+    }
+
+    // ---------- Alerts ----------
+    function computeAlerts() {
+      const alerts = [];
+      const nowTs = Date.now();
+      ORDERS.forEach(o => {
+        if (o.status === 'cancelled') {
+          alerts.push({ level: 'info', text: `Order ${o.id} cancelled (${o.cancelledReason || 'no reason'})` });
+        } else {
+          const age = nowTs - new Date(o.ts).getTime();
+          const totalItems = o.items.reduce((s,it)=>s+it.qty,0);
+          if ((o.status === 'waiting' || o.status === 'inprogress') && age > LONG_WAIT_MS) {
+            alerts.push({ level: 'warning', text: `Long wait: ${o.id} (${timeAgo(o.ts)} ago)` });
+          }
+          if (totalItems >= LARGE_ORDER_ITEM_COUNT) {
+            alerts.push({ level: 'warning', text: `Large group: ${o.id} (${totalItems} items)` });
+          }
+        }
+      });
+      return alerts;
+    }
+
+    function updateAlerts() {
+      const panel = el('alertsPanel');
+      const alerts = computeAlerts();
+
+      panel.innerHTML = '';
+      if (alerts.length === 0) {
+        panel.innerHTML = '<div class="text-gray-400">No alerts right now.</div>';
+        return;
+      }
+
+      alerts.forEach(a => {
+        const div = document.createElement('div');
+        div.className = 'flex items-start gap-2';
+        const icon = document.createElement('div');
+        icon.className = `w-8 h-8 flex items-center justify-center rounded-full ${a.level === 'warning' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-700'}`;
+        icon.textContent = a.level === 'warning' ? '⚠️' : 'ℹ️';
+        const content = document.createElement('div');
+        content.innerHTML = `<div class="text-sm">${escapeHtml(a.text)}</div>`;
+        div.appendChild(icon);
+        div.appendChild(content);
+        panel.appendChild(div);
+      });
+    }
+
+    // ---------- Smart Assistant ----------
+    function computeSmartSuggestions() {
+      // Aggregates item counts; suggests prepping more if some item's queued count >= threshold
+      const suggestions = [];
+      const itemCounts = {}; // name -> total qty in waiting/inprogress
+      ORDERS.forEach(o => {
+        if (o.status === 'waiting' || o.status === 'inprogress') {
+          o.items.forEach(it => {
+            itemCounts[it.name] = (itemCounts[it.name] || 0) + it.qty;
+          });
+        }
+      });
+
+      // Suggest if any pastry/drink high demand
+      const entries = Object.entries(itemCounts).sort((a,b)=>b[1]-a[1]);
+      entries.slice(0,5).forEach(([name, cnt]) => {
+        if (cnt >= 3) { // threshold for suggestion
+          suggestions.push(`Consider prepping more ${name} — ${cnt} orders in queue.`);
+        }
+      });
+
+      // Suggest attention if many long waiting orders
+      const longWaits = ORDERS.filter(o => (o.status === 'waiting' || o.status === 'inprogress') && (Date.now() - new Date(o.ts).getTime()) > LONG_WAIT_MS);
+      if (longWaits.length >= 2) {
+        suggestions.push(`Multiple long-waiting orders (${longWaits.length}). Consider reallocating staff.`);
+      }
+
+      // Suggest about large group orders
+      const largeOrders = ORDERS.filter(o => o.items.reduce((s,it)=>s+it.qty,0) >= LARGE_ORDER_ITEM_COUNT && o.status !== 'cancelled');
+      largeOrders.forEach(o => suggestions.push(`Large order ${o.id} for ${o.customer} (${o.items.reduce((s,it)=>s+it.qty,0)} items) — consider batching.`));
+
+      if (suggestions.length === 0) suggestions.push('No urgent suggestions. Keep up the good work!');
+
+      return suggestions;
+    }
+
+    function updateAssistant() {
+      const panel = el('assistantPanel');
+      panel.innerHTML = '';
+      const suggestions = computeSmartSuggestions();
+      suggestions.forEach(s => {
+        const d = document.createElement('div');
+        d.className = 'flex items-start gap-2';
+        d.innerHTML = `<div class="text-sm">${escapeHtml(s)}</div>`;
+        panel.appendChild(d);
+      });
+    }
+
+    // ---------- Auto-refresh simulation ----------
+    function startAutoRefresh(seconds) {
+      stopAutoRefresh();
+      if (!seconds || seconds <= 0) return;
+      autoRefreshTimer = setInterval(() => {
+        simulateProgressTick();
+        render();
+      }, seconds*1000);
+    }
+
+    function stopAutoRefresh() {
+      if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
+    }
+
+    function simulateProgressTick() {
+      // simulate some random transitions:
+      // waiting -> inprogress (50% chance for waiting > 15s)
+      // inprogress -> ready (30% chance)
+      const nowTs = Date.now();
+      ORDERS.forEach(o => {
+        if (o.status === 'waiting') {
+          const age = nowTs - new Date(o.ts).getTime();
+          // if older than 15s (demo), higher chance to move to inprogress
+          const prob = Math.min(0.6, (age / 1000) * 0.03 + 0.1); // small rising chance
+          if (Math.random() < prob) {
+            o.status = 'inprogress';
+          }
+        } else if (o.status === 'inprogress') {
+          if (Math.random() < 0.35) {
+            o.status = 'ready';
+          }
+        }
+      });
+    }
+
+    // ---------- Utility ----------
+    function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+    function escapeHtml(s) {
+      if (typeof s !== 'string') return s;
+      return s.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+    }
+
+    // ---------- Event wiring ----------
+    document.addEventListener('DOMContentLoaded', () => {
+      el('addDemoBtn').addEventListener('click', () => addOrder(generateDemoOrder()));
+      el('addBatchBtn').addEventListener('click', () => {
+        for (let i=0;i<5;i++) addOrder(generateDemoOrder());
+      });
+      el('addNBtn').addEventListener('click', () => {
+        const n = parseInt(el('demoCount').value) || 1;
+        for (let i=0;i<n;i++) addOrder(generateDemoOrder());
+      });
+
+      el('markAllReady').addEventListener('click', markAllReady);
+      el('cancelAll').addEventListener('click', () => {
+        if (confirm('Are you sure? This will cancel all orders.')) cancelAllOrders();
+      });
+
+      el('clearAlertsBtn').addEventListener('click', () => {
+        // clear cancelled reasons and suppress alerts; for demo, we'll mark cancelledReason to empty
+        ORDERS.forEach(o => { if (o.cancelledReason) o.cancelledReason = null; /* will still show cancelled status though */ });
+        render();
+      });
+
+      el('runAssistantBtn').addEventListener('click', updateAssistant);
+
+      el('autoRefreshSelect').addEventListener('change', (e) => {
+        const v = e.target.value;
+        if (v === 'off') stopAutoRefresh();
+        else startAutoRefresh(parseInt(v));
+      });
+
+      // initial demo data for convenience
+      for (let i=0;i<4;i++) addOrder(generateDemoOrder());
+      render();
+    });
+
+    // Simple keyboard shortcuts (optional)
+    window.addEventListener('keydown', (e) => {
+      if (e.ctrlKey && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        addOrder(generateDemoOrder());
+      }
+    });
+  </script>
+</body>
+</html>
